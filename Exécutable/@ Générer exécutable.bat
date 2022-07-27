@@ -1,0 +1,1 @@
+copy /b love.exe+covid.love "Covid Attack.exe"

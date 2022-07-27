@@ -1,240 +1,172 @@
-Enemy = require "enemy"
+Vector = require("librairies/Vector")
+MathUtils = require("librairies/MathUtils")
+TableUtils = require("librairies/TableUtils")
+AnimationUtils = require("librairies/AnimationUtils")
 
-CENTER={}
-SCREEN={}
-
-enemies = {}
-missiles = {}
-
-life = 3
-
-points = 0
-
-invincibilityTimer = 0
-
-easeOutTimer = 0
-
-missileCoolDown = 0
-
-buffEnemy = false
-
-maxEnemies = 10
-
-local function sizeOf(table)
-  local _size = 0
-
-  for i, v in ipairs(table) do
-    _size = _size + 1
-  end
-
-  return _size
-end
-
-function table.shallow_copy(t)
-  local t2 = {}
-  for k,v in pairs(t) do
-    t2[k] = v
-  end
-  return t2
-end
-
-function easeOutBack(x)
-  local c1 = 1.70158;
-  local c3 = c1 + 1;
-
-  return 1 + c3 * math.pow(x - 1, 3) + c1 * math.pow(x - 1, 2);
-end
-
-function love.keypressed(key, scancode, isrepeat)
-  if key == "r" then
-
-  end
-end
-
-function newAnimation(image, width, height, duration)
-    local animation = {}
-    animation.spriteSheet = image;
-    animation.quads = {};
-
-    for y = 0, image:getHeight() - height, height do
-        for x = 0, image:getWidth() - width, width do
-            table.insert(animation.quads, love.graphics.newQuad(x, y, width, height, image:getDimensions()))
-        end
-    end
-
-    animation.duration = duration or 1
-    animation.currentTime = 0
-
-    animation.width = width
-    animation.height = height
-
-    return animation
-end
+Player = require("player")
+Projectile = require("projectile")
+Enemy = require("enemy")
+HUD = require("hud")
 
 function love.load()
 
-  love.mouse.setVisible(false)
+  -- CHARGEMENT DES SONS
+  theme = love.audio.newSource("resources/audio/mars.wav", "stream")
+  theme:setLooping(true)
+  theme:setVolume(1)
+  --theme:play()
 
-  marsTheme = love.audio.newSource("mars.wav", "stream")
-  marsTheme:setLooping(true)
-  marsTheme:setVolume(3)
-  marsTheme:play()
+  piou = love.audio.newSource("resources/audio/piou.wav", "static")
+  piou:setVolume(0.1)
 
-  piou = love.audio.newSource("piou.wav", "static")
-  piou:setVolume(0.25)
-
-  cougth = love.audio.newSource("cought.wav", "static")
+  cougth = love.audio.newSource("resources/audio/cought.wav", "static")
   cougth:setVolume(0.6)
 
-  boum = love.audio.newSource("boum.wav", "static")
-  boum:setVolume(0.4)
+  boom = love.audio.newSource("resources/audio/boum.wav", "static")
+  boom:setVolume(0.2)
 
-  covid = love.graphics.newImage("covid.png")
+  gameOver = love.audio.newSource("resources/audio/game-over.wav", "static")
+  gameOver:setVolume(1)
 
-  background = love.graphics.newImage("lungs-v2.png")
+  bomb = love.audio.newSource("resources/audio/bomb.wav", "static")
 
-  lifeHeart = love.graphics.newImage("lungs life.png")
+  -- CHARGEMENT DES IMAGES
+  boomAnimation = AnimationUtils:new(love.graphics.newImage("resources/images/explosion.png"), 192, 192, 1)
+  background = love.graphics.newImage("resources/images/background.png")
+  titleBackground = love.graphics.newImage("resources/images/title-background.jpg")
+  gameOverBackground = love.graphics.newImage("resources/images/game-over-background.jpg")
 
-  boomAnimation = newAnimation(love.graphics.newImage("explosion.png"), 192, 192, 1)
+  lungs = love.graphics.newImage("resources/images/lungs.png")
 
-  seringue = love.graphics.newImage("seringue.png")
-  vaccine = love.graphics.newImage("vaccine drop.png")
+  -- CHARGEMENT DES FONTS
+  titleFont = love.graphics.newFont(50)
+  normalFont = love.graphics.newFont(20)
 
-  defaultFont = love.graphics.newFont("GreatVibes-Regular.otf",25)
-  titleFont = love.graphics.newFont("GreatVibes-Regular.otf",50)
+  -- INITIALISATION DES TEXTE
+  titleText = love.graphics.newText( titleFont, "COVID-19 ATTACK !" )
+  gameOverText = love.graphics.newText( titleFont, "GAME OVER" )
 
-  SCREEN.width = love.graphics.getWidth()
-  SCREEN.height = love.graphics.getHeight()
+  math.randomseed(os.time())
 
-  CENTER.x = SCREEN.width/2
-  CENTER.y = SCREEN.height/2
+  love.mouse.setVisible(false)
 
-  PLAYER = {}
+  screenWidth = love.graphics.getWidth()
+  screenHeight = love.graphics.getHeight()
+
+  center = {}
+  center.x = screenWidth/2
+  center.y = screenHeight/2
+
+  gameZoneRadius = 320
+
+
+  -- Initialisation du joueur
+  Player:init()
+  player = Player:new(center.x, center.y)
+
+
+  projectiles = {}
+
+  -- Initialisation des ennemis
+  Enemy:init()
+  enemies = {}
+
 end
 
+-- TEMPORAIRE, GESTION DE L'EFFET SONORE GAME OVER
+local _gameOverTriggered = false
+
+-- TEMPORAIRE, GESTION DE L'ECRAN TITRE
+local _titleScreen = true
 
 function love.update(dt)
 
-  easeOutTimer = easeOutTimer + dt*2.5
-  if easeOutTimer >= 1 then
-    easeOutTimer = easeOutTimer - 1
+  if player.life ~= 0 and _titleScreen == false then
+    -- Mise à jour du joueur
+    player:update(dt)
+
+    -- Mise à jour des projectiles tirés
+    for index, projectile in ipairs(projectiles) do
+      projectile:update(index, dt)
+    end
+
+    -- Pop d'un nouvel enemi
+    if math.random() < Enemy.enemiePopFrequency and TableUtils.sizeOf(enemies) < Enemy.maxEnemies then
+      local _enemy = Enemy:new()
+      table.insert(enemies, _enemy)
+    end
+
+    for index, enemy in ipairs(enemies) do
+      enemy:update(index, dt)
+    end
+  elseif _gameOverTriggered == false and _titleScreen == false then
+    projectiles = {}
+    enemies = {}
+    theme:stop()
+    gameOver:play()
+    _gameOverTriggered = true
   end
 
-  if love.mouse.isDown(1) and missileCoolDown == 0 then
-    missileCoolDown = 0.15
-    if sizeOf(missiles) < 500 then
-      local _missile = {}
-      _missile.x = love.mouse.getX()
-      _missile.y = love.mouse.getY()
-
-      table.insert(missiles, _missile)
-      local _piou = piou:clone()
-      _piou:play()
-
-    end
-  end
-
-  missileCoolDown = missileCoolDown - dt
-  if missileCoolDown <= 0 then
-    missileCoolDown = 0
-  end
-
-  titleScaleFactor = easeOutBack(easeOutTimer) *2
-
-  if life > 0 then
-
-    if invincibilityTimer > 0 then
-      invincibilityTimer = invincibilityTimer - dt
-    else
-      invincibilityTimer = 0
-    end
-
-    PLAYER.x = love.mouse.getX()
-    PLAYER.y = love.mouse.getY()
-
-    for index, missile in ipairs(missiles) do
-      missile.y = missile.y - 300 * dt
-      if missile.y <= 0 then
-        table.remove(missiles, index)
-      end
-    end
-
-    if math.random() < 0.03 and sizeOf(enemies)<maxEnemies then
-
-      local _randomX = math.random(0, love.graphics.getWidth())
-      local _randomY = math.random(0, love.graphics.getHeight())
-
-      local _newEnemy = Enemy:new(_randomX,_randomY)
-
-      table.insert(enemies, _newEnemy)
-    end
-
-    for indexEnemy, enemy in ipairs(enemies) do
-      enemy:update(indexEnemy, dt)
-
-      -- On teste les collisions
-      for indexMissile, missile in ipairs(missiles) do
-        if math.sqrt(math.pow(missile.x-enemy.x, 2) + math.pow(missile.y-enemy.y, 2)) <= (17 + 5) then -- 17 le rayon du covid + 5 le rayon du vaccin
-          enemy:destroy(indexEnemy)
-          table.remove(missiles, indexMissile)
-          points = points + 10
-
-          if points % 100 == 0 and points > 0 and buffEnemy == false then
-            print('buffEnemy')
-            buffEnemy = true
-          end
-
-        end
-      end
-    end
-
-
-
-  end
 end
 
 function love.draw()
 
-  love.graphics.setColor(1, 1, 1, 1)
-
-  love.graphics.draw(background, 0, 0, 0, 1/(background:getWidth()/love.graphics.getWidth()), 1/(background:getHeight()/love.graphics.getHeight()))
-
-  titleDrawable = love.graphics.newText( titleFont, "Super covid-19 Attack !" )
-  love.graphics.draw(titleDrawable, love.graphics.getWidth()/2 - titleDrawable:getWidth()*titleScaleFactor/2 , 20, 0, titleScaleFactor, titleScaleFactor)
-
-  love.graphics.setFont(defaultFont)
-
-  if life > 0 then
-
-    love.graphics.setColor(0, 1, 0, 1)
-    for index, missile in ipairs(missiles) do
-      love.graphics.circle('fill', missile.x, missile.y, 5, 16)
-    end
-
+  if _titleScreen == true then
     love.graphics.setColor(1, 1, 1, 1)
-    for i=0,life-1 do
-      love.graphics.draw(lifeHeart, 10 + i*0.15*lifeHeart:getWidth(), 10, 0, 0.15, 0.15)
-    end
+    love.graphics.draw(titleBackground, 0, 0, 0, 1/(titleBackground:getWidth()/love.graphics.getWidth()), 1/(titleBackground:getHeight()/love.graphics.getHeight()))
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.draw(titleText, love.graphics.getWidth()/2 - titleText:getWidth()/2, love.graphics.getHeight()/2 - titleText:getHeight()/2)
+  elseif player.life ~= 0 then
+    love.graphics.setColor(1, 1, 1, 1)
 
-    love.graphics.print("Score : " .. points, 10, 100)
+    love.graphics.draw(background, 0, 0, 0, 1/(background:getWidth()/love.graphics.getWidth()), 1/(background:getHeight()/love.graphics.getHeight()))
 
-
-    if invincibilityTimer > 0 then
-      love.graphics.setColor(1, 1, 1, 0.3)
-    else
-      love.graphics.setColor(1, 1, 1, 1)
-    end
-    --love.graphics.polygon('fill', PLAYER.x, PLAYER.y-20, PLAYER.x-10, PLAYER.y+20, PLAYER.x, PLAYER.y+15, PLAYER.x+10, PLAYER.y+20)
-    love.graphics.draw(seringue, PLAYER.x, PLAYER.y, 0, 0.05, 0.05, seringue:getWidth()/2, 500)
+    love.graphics.setLineWidth(5)
+    love.graphics.setColor(1, 1, 1, 0.3)
+    love.graphics.circle('fill', center.x, center.y, gameZoneRadius, 128)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.circle('line', center.x, center.y, gameZoneRadius, 128)
 
     for index, enemy in ipairs(enemies) do
       enemy:draw()
     end
+
+    for index, projectile in ipairs(projectiles) do
+      projectile:draw()
+    end
+
+    player:draw()
+
+    HUD.draw()
   else
+    local _finalScoreText = love.graphics.newText( normalFont, "Score : " .. player.score )
+    local _totalHeight = gameOverText:getHeight() + _finalScoreText:getHeight()
+
     love.graphics.setColor(1, 1, 1, 1)
-    gameoverDrawable = love.graphics.newText( titleFont, "Game Over" )
-    finalScoreDrawable = love.graphics.newText( titleFont, "Your score : " .. points )
-    love.graphics.draw(gameoverDrawable, love.graphics.getWidth()/2 - gameoverDrawable:getWidth()/2, love.graphics.getHeight()/2 - gameoverDrawable:getHeight()/2)
-    love.graphics.draw(finalScoreDrawable, love.graphics.getWidth()/2 - finalScoreDrawable:getWidth()/2, love.graphics.getHeight()/2 - finalScoreDrawable:getHeight()/2 + gameoverDrawable:getHeight() + 20)
+    love.graphics.draw(gameOverBackground, 0, 0, 0, 1/(gameOverBackground:getWidth()/love.graphics.getWidth()), 1/(gameOverBackground:getHeight()/love.graphics.getHeight()))
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.draw(gameOverText, love.graphics.getWidth()/2 - gameOverText:getWidth()/2, love.graphics.getHeight()/2 - _totalHeight/2)
+    love.graphics.draw(_finalScoreText, love.graphics.getWidth()/2 - _finalScoreText:getWidth()/2, love.graphics.getHeight()/2 + _totalHeight/2)
+  end
+
+end
+
+function love.keypressed(key, scancode, isrepeat)
+  if key == "return" then
+    print("enter")
+    if _titleScreen == true and _gameOverTriggered == false then
+
+      -- Réinitialisation du joueur
+      Player:init()
+
+      -- Réinitialisation des l'ennemis
+      Enemy:init()
+
+      theme:play()
+      _titleScreen = false
+    elseif _titleScreen == false and _gameOverTriggered == true then
+        _gameOverTriggered = false
+        _titleScreen = true
+    end
   end
 end
